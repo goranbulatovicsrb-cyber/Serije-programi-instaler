@@ -48,10 +48,73 @@ jobs:
         run: choco install innosetup --no-progress -y
         shell: pwsh
 
-      - name: Build Installer
+      - name: Generate ISS script and Build Installer
         run: |
           New-Item -ItemType Directory -Force -Path "dist"
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer\SeriesIndexer.iss" /O"dist" /F"SeriesIndexer_v2.0_Setup"
+          $iss = @"
+[Setup]
+AppId={{8F3A2C1D-4E5B-4F6A-9D8E-1C2B3A4D5E6F}
+AppName=SeriesIndexer
+AppVersion=2.0
+DefaultDirName={autopf}\SeriesIndexer
+DefaultGroupName=SeriesIndexer
+DisableProgramGroupPage=yes
+PrivilegesRequired=lowest
+OutputBaseFilename=SeriesIndexer_v2.0_Setup
+OutputDir=dist
+Compression=lzma2/ultra64
+SolidCompression=yes
+WizardStyle=modern
+UninstallDisplayName=SeriesIndexer v2.0
+CloseApplications=yes
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Tasks]
+Name: "desktopicon"; Description: "Napravi ikonu na desktopu"; Flags: unchecked
+
+[Files]
+Source: "build\Release\SeriesIndexer.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "build\Release\Qt5Core.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "build\Release\Qt5Gui.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "build\Release\Qt5Widgets.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "build\Release\Qt5Network.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "build\Release\Qt5Sql.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "build\Release\platforms\*"; DestDir: "{app}\platforms"; Flags: ignoreversion recursesubdirs
+Source: "build\Release\sqldrivers\*"; DestDir: "{app}\sqldrivers"; Flags: ignoreversion recursesubdirs
+Source: "build\Release\imageformats\*"; DestDir: "{app}\imageformats"; Flags: ignoreversion recursesubdirs skipifsourcedoesntexist
+Source: "build\Release\styles\*"; DestDir: "{app}\styles"; Flags: ignoreversion recursesubdirs skipifsourcedoesntexist
+Source: "build\Release\vcruntime140.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "build\Release\vcruntime140_1.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "build\Release\msvcp140.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "series_seed.db"; DestDir: "{app}"; Flags: ignoreversion
+
+[Icons]
+Name: "{group}\SeriesIndexer"; Filename: "{app}\SeriesIndexer.exe"
+Name: "{group}\Deinstalacija"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\SeriesIndexer"; Filename: "{app}\SeriesIndexer.exe"; Tasks: desktopicon
+
+[Run]
+Filename: "{app}\SeriesIndexer.exe"; Description: "Pokrenite SeriesIndexer"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function IsPythonInstalled(): Boolean;
+var ResultCode: Integer;
+begin
+  Result := Exec('cmd.exe', '/C python --version', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var ResultCode: Integer;
+begin
+  if CurStep = ssPostInstall then
+    if IsPythonInstalled() then
+      Exec('cmd.exe', '/C python -m pip install pandas openpyxl --quiet --user', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+"@
+          $iss | Out-File -FilePath "setup.iss" -Encoding UTF8
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "setup.iss"
         shell: pwsh
 
       - name: Create Portable ZIP
